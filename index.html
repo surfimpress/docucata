@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docucata - File Metadata Extractor</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/gridjs/dist/theme/mermaid.css">
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <h1 class="header-title">Docucata</h1>
+            <span class="header-strapline">Safely catalogue your files in your browser</span>
+            <span class="header-separator"></span>
+            <button id="btnAbout" class="btn btn-ghost header-btn" type="button">About</button>
+            <button id="btnGuide" class="btn btn-ghost header-btn" type="button">Guide</button>
+        </div>
+        <div class="header-right">
+            <span class="header-badge">Local Files</span>
+            <span class="header-separator"></span>
+            <span class="mapping-prefix">Mapping:</span>
+            <div class="mapping-selector" id="mappingSelector">
+                <button class="mapping-toggle" id="mappingToggle" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <svg class="mapping-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    <span class="mapping-label" id="mappingLabel">Default</span>
+                    <svg class="mapping-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="mapping-dropdown" id="mappingDropdown"></div>
+            </div>
+        </div>
+    </header>
+
+    <main class="main">
+        <section class="drop-section">
+            <div id="dropZone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <svg class="drop-icon" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p class="drop-text">Drop files, folders, or ZIP archives here</p>
+                    <p class="drop-subtext">or</p>
+                    <label class="btn btn-primary file-label">
+                        Browse Files
+                        <input type="file" id="filePicker" multiple hidden>
+                    </label>
+                </div>
+            </div>
+            <div id="progressBar" class="progress-bar hidden">
+                <div class="progress-bar-label" id="progressLabel"></div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-bar-sublabel" id="progressSublabel"></div>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <!-- Batch bar + toolbar -->
+            <div class="batch-bar">
+                <div class="batch-bar-left">
+                    <span class="batch-prefix">Batch:</span>
+                    <div class="batch-selector" id="batchSelector">
+                        <button class="batch-toggle" id="batchToggle" type="button" aria-haspopup="listbox" aria-expanded="false">
+                            <svg class="batch-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            <span class="batch-label" id="batchLabel">No batch</span>
+                            <svg class="batch-caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+                        <div class="batch-dropdown" id="batchDropdown"></div>
+                    </div>
+                    <span id="fileCount" class="file-count">0 files</span>
+                    <span id="cacheStatus" class="cache-status"></span>
+                </div>
+                <div class="batch-bar-right">
+                    <button id="btnClear" class="btn btn-ghost">Clear All</button>
+                    <button id="btnClearCache" class="btn btn-ghost">Clear Previews</button>
+                    <div class="export-menu" id="exportMenu">
+                        <button id="btnExport" class="btn btn-primary">Export ▾</button>
+                        <div class="export-dropdown" id="exportDropdown">
+                            <button id="btnExportCsv" class="export-option">Export CSV</button>
+                            <button id="btnExportJson" class="export-option">Export JSON</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-area">
+                <div id="colSelectorSlot" class="col-selector-slot"></div>
+                <div id="gridWrapper"></div>
+            </div>
+            <p id="emptyState" class="empty-state">No files loaded. Drop files, folders, or ZIP archives above — or select a batch.</p>
+            <p id="storageStats" class="storage-stats"></p>
+        </section>
+    </main>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <!-- File Viewer Modal -->
+    <div id="viewerModal" class="viewer-modal">
+        <div class="viewer-backdrop"></div>
+        <div class="viewer-container">
+            <div class="viewer-header">
+                <span class="viewer-title"></span>
+                <button class="viewer-close" title="Close">&times;</button>
+            </div>
+            <div class="viewer-body-wrap">
+                <div class="viewer-loading">
+                    <div class="viewer-spinner"></div>
+                    <span>Loading...</span>
+                </div>
+                <div class="viewer-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mapping Editor Modal -->
+    <div id="mappingModal" class="mapping-editor-modal">
+        <div class="mapping-editor-backdrop"></div>
+        <div class="mapping-editor-container">
+            <div class="mapping-editor-header">
+                <span class="mapping-editor-title"></span>
+                <button class="mapping-editor-close" title="Close">&times;</button>
+            </div>
+            <div class="mapping-editor-body"></div>
+            <div class="mapping-editor-footer">
+                <div class="mapping-editor-footer-left">
+                    <button class="btn btn-ghost mapping-editor-apply">Apply to existing records in this batch</button>
+                </div>
+                <div class="mapping-editor-footer-right">
+                    <button class="btn btn-ghost mapping-editor-cancel">Cancel</button>
+                    <button class="btn btn-primary mapping-editor-save">Save Mapping</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Modal (About / Guide) -->
+    <div id="infoModal" class="info-modal">
+        <div class="info-modal-backdrop"></div>
+        <div class="info-modal-container">
+            <div class="info-modal-header">
+                <span class="info-modal-title"></span>
+                <button class="info-modal-close" title="Close">&times;</button>
+            </div>
+            <div class="info-modal-body"></div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/gridjs/dist/gridjs.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js"></script>
+    <script type="module">
+        // Load pdf.js as a global so fileViewer.js can use it
+        import * as pdfjsModule from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.mjs';
+        window.pdfjsLib = pdfjsModule;
+        pdfjsModule.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.mjs';
+    </script>
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>

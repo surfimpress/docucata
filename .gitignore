@@ -1,0 +1,8 @@
+# macOS
+.DS_Store
+
+# Test/sample files
+sources/
+
+# Claude Code
+.claude/
