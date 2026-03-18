@@ -49,7 +49,7 @@ export async function openViewer(item) {
     const ext = item.extension?.toLowerCase();
 
     try {
-        if (ext === 'pdf') {
+        if (ext === 'pdf' || ext === 'ai') {
             await renderPdf(bodyEl, item._file);
         } else if (SPREADSHEET_EXTS.includes(ext)) {
             await renderSpreadsheet(bodyEl, item._file);

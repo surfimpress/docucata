@@ -12,7 +12,7 @@ let currentData = [];
 
 const ARCHIVE_EXTS = ['zip', 'gz', 'tar', '7z', 'rar', 'bz2', 'xz'];
 const VIEWABLE_EXTS = [
-    'pdf', 'doc', 'dot', 'docx', 'rtf',
+    'pdf', 'ai', 'doc', 'dot', 'docx', 'rtf',
     'xlsx', 'xls', 'ods',
     'mp3', 'wav', 'wave', 'flac', 'ogg', 'oga', 'aif', 'aiff', 'm4a', 'aac', 'opus',
     'mp4', 'mov', 'm4v', 'webm',

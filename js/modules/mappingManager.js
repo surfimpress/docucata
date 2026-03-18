@@ -197,6 +197,33 @@ export const DEEP_META_CATALOG = [
     { key: 'Timescale',        source: 'Video' },
     { key: 'TrackCount',       source: 'Video' },
 
+    // PSD (Photoshop)
+    { key: 'Format',              source: 'PSD' },
+    { key: 'Width',               source: 'PSD' },
+    { key: 'Height',              source: 'PSD' },
+    { key: 'Channels',            source: 'PSD' },
+    { key: 'BitDepth',            source: 'PSD' },
+    { key: 'ColorMode',           source: 'PSD' },
+    { key: 'HorizontalResolution', source: 'PSD' },
+    { key: 'VerticalResolution',  source: 'PSD' },
+    { key: 'ICCProfile',          source: 'PSD' },
+    { key: 'IptcTitle',           source: 'PSD' },
+    { key: 'IptcAuthor',          source: 'PSD' },
+    { key: 'IptcKeywords',        source: 'PSD' },
+    { key: 'IptcCopyright',       source: 'PSD' },
+    { key: 'IptcDescription',     source: 'PSD' },
+    { key: 'IptcDateCreated',     source: 'PSD' },
+
+    // XMP (shared across AI, PSD, INDD)
+    { key: 'CreatorTool',         source: 'XMP' },
+    { key: 'Description',         source: 'XMP' },
+    { key: 'Rights',              source: 'XMP' },
+    { key: 'DocumentID',          source: 'XMP' },
+    { key: 'InstanceID',          source: 'XMP' },
+    { key: 'OriginalDocumentID',  source: 'XMP' },
+    { key: 'MetadataDate',        source: 'XMP' },
+    { key: 'XmpColorMode',        source: 'XMP' },
+
     // RTF
     { key: 'charCountWithSpaces', source: 'RTF' },
     { key: 'totalEditingTime', source: 'RTF' },

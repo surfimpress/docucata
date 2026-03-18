@@ -23,6 +23,8 @@ import { parseSpreadsheetMetadata } from '../parsers/spreadsheetParser.js';
 import { parseAudioMetadataFromBuffer } from '../parsers/audioParser.js';
 import { parseTextMetadata } from '../parsers/textParser.js';
 import { parseVideoMetadataFromBuffer } from '../parsers/videoParser.js';
+import { parsePsdMetadataFromBuffer } from '../parsers/psdParser.js';
+import { parseInddMetadataFromBuffer } from '../parsers/inddParser.js';
 import { extractExcerptFromBuffer } from '../modules/excerptExtractor.js';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'tiff', 'tif', 'heic', 'heif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
@@ -46,7 +48,7 @@ const SPREADSHEET_EXTS = ['xlsx', 'xls', 'ods', 'csv'];
 export async function dispatchParsers(buffer, extension, category, fileSize) {
     let deepMeta = null;
 
-    if (extension === 'pdf') {
+    if (extension === 'pdf' || extension === 'ai') {
         deepMeta = await parsePdfMetadata(buffer);
     } else if (IMAGE_EXTS.includes(extension)) {
         deepMeta = await parseImageMetadataFromBuffer(buffer, extension);
@@ -60,6 +62,10 @@ export async function dispatchParsers(buffer, extension, category, fileSize) {
         deepMeta = await parseAudioMetadataFromBuffer(buffer, extension, fileSize);
     } else if (VIDEO_EXTS.includes(extension)) {
         deepMeta = parseVideoMetadataFromBuffer(buffer);
+    } else if (extension === 'psd') {
+        deepMeta = parsePsdMetadataFromBuffer(buffer);
+    } else if (extension === 'indd') {
+        deepMeta = parseInddMetadataFromBuffer(buffer);
     }
 
     // Text file analysis — encoding, line endings, word/line counts

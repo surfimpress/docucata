@@ -124,6 +124,11 @@ function matchMagicBytes(b) {
         return { extension: 'tiff', mime: 'image/tiff', category: 'Image' };
     }
 
+    // PSD: 8BPS
+    if (b[0] === 0x38 && b[1] === 0x42 && b[2] === 0x50 && b[3] === 0x53) {
+        return { extension: 'psd', mime: 'image/vnd.adobe.photoshop', category: 'Image' };
+    }
+
     // ISO BMFF (MP4/MOV/M4V): bytes 4-7 = 'ftyp'
     if (b.length >= 8 &&
         b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
@@ -246,7 +251,7 @@ const CATEGORY_MAP = {
     bmp: 'Image', svg: 'Image', webp: 'Image', tiff: 'Image',
     tif: 'Image', ico: 'Image', heic: 'Image', heif: 'Image',
     raw: 'Image', cr2: 'Image', nef: 'Image', psd: 'Image',
-    ai: 'Image', eps: 'Image',
+    ai: 'Image', eps: 'Image', indd: 'Document',
     // Video
     mp4: 'Video', mov: 'Video', avi: 'Video', mkv: 'Video',
     wmv: 'Video', flv: 'Video', webm: 'Video', m4v: 'Video',

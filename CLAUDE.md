@@ -56,6 +56,9 @@ docucata/
 │       ├── rtfParser.js           # RTF \info group parsing (File | ArrayBuffer)
 │       ├── textParser.js          # Plain text encoding/stats analysis (File | ArrayBuffer)
 │       ├── videoParser.js          # MP4/MOV/M4V metadata via ISO BMFF box parsing (File | ArrayBuffer)
+│       ├── psdParser.js           # PSD/PSB header + image resources (XMP, IPTC, resolution)
+│       ├── inddParser.js          # InDesign metadata via embedded XMP packet scanning
+│       ├── xmpParser.js           # Shared XMP XML parser + packet finder (worker-safe)
 │       ├── docTextExtractor.js    # .doc text extraction (OLE2 piece table + Word for Mac 4.0)
 │       └── zipHandler.js          # ZIP extraction with OS artifact filtering
 ├── CHANGELOG.md
@@ -95,6 +98,9 @@ docucata/
 | RTF | rtf | rtfParser |
 | Text | txt, md, log, csv, ini, cfg, yaml, yml, toml | textParser |
 | Video (ISO BMFF) | mp4, mov, m4v | videoParser (ISO BMFF box parsing) |
+| Photoshop | psd | psdParser (header + image resources: XMP, IPTC) |
+| Illustrator | ai | pdfParser (AI files are PDF-based since Illustrator 9) |
+| InDesign | indd | inddParser (embedded XMP packet scanning) |
 | Archives | zip | zipHandler (unpack only) |
 
 ## Viewer Support
@@ -107,6 +113,7 @@ docucata/
 | Audio (mp3, wav, flac, ogg, etc.) | Native `<audio>` player + metadata card |
 | Images | Native `<img>` via object URL |
 | TIFF | UTIF.js canvas decoding |
+| AI (Illustrator) | pdf.js canvas pages (AI files are PDF internally) |
 | Video (mp4, mov, m4v, webm) | Native `<video>` player + metadata card |
 | Text/code | `<pre>` block |
 

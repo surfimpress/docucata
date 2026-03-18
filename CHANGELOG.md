@@ -2,6 +2,14 @@
 
 ## 2026-03-18
 
+### Adobe Creative Suite Support (AI, PSD, INDD)
+- **Illustrator (.ai)**: Routed to PDF parser and pdf.js viewer — modern AI files (Illustrator 9+) are PDF-based internally. Full metadata extraction (title, author, creation date, page count, XMP) and visual preview via pdf.js canvas rendering
+- **Photoshop (.psd/.psb)**: New parser `psdParser.js` — reads binary header (dimensions, channels, bit depth, color mode) and Image Resource Blocks for XMP metadata (0x0424), IPTC records (0x0404), resolution (0x03ED), and ICC profile name (0x040F). Handles PSB (large document) format via version detection
+- **InDesign (.indd)**: New parser `inddParser.js` — scans for embedded XMP packet (`<?xpacket begin` marker) to extract Dublin Core fields (title, author, description, keywords), creation/modification dates, creator tool, and document IDs. Scans up to 4MB into the file
+- **Shared XMP parser**: New `xmpParser.js` — regex-based XML parser (worker-safe, no DOMParser) extracts Dublin Core, XMP basic, XMP Media Management, Photoshop, and Illustrator-specific fields. `findXmpPacket()` locates XMP packets by scanning raw bytes. Reusable by any format with embedded XMP
+- Added `indd` to `CATEGORY_MAP` as 'Document'; PSD magic byte (`8BPS`) detection added to `matchMagicBytes()`
+- 23 new metadata keys added to `DEEP_META_CATALOG` across PSD and XMP source groups
+
 ### TIFF Preview Support
 - TIFF files now render in the viewer via **UTIF.js** canvas decoding — cross-browser support for LZW, CMYK, 16-bit, and other TIFF variants that browsers can't display natively via `<img>`
 - Added `tiff`/`tif` to `VIEWABLE_EXTS` and `IMAGE_EXTS` in the viewer
