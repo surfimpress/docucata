@@ -52,20 +52,20 @@ export async function extractDocText(input) {
         // Try piece table extraction first
         const pieceText = extractViaPieceTable(bytes, header, fat, dirs, wordDocData, miniCtx);
         if (pieceText && pieceText.length > 10) {
-            console.log(`[Docucata:DocText] ${file.name}: extracted ${pieceText.length} chars via piece table`);
+            console.log(`[Docucata:DocText] ${input.name ?? 'buffer'}: extracted ${pieceText.length} chars via piece table`);
             return pieceText;
         }
 
         // Fallback: scan for readable text runs
         const scannedText = scanForText(wordDocData);
         if (scannedText) {
-            console.log(`[Docucata:DocText] ${file.name}: extracted ${scannedText.length} chars via text scan`);
+            console.log(`[Docucata:DocText] ${input.name ?? 'buffer'}: extracted ${scannedText.length} chars via text scan`);
             return scannedText;
         }
 
         return null;
     } catch (e) {
-        console.warn(`[Docucata:DocText] Failed to extract text from ${file.name}:`, e);
+        console.warn(`[Docucata:DocText] Failed to extract text from ${input.name ?? 'buffer'}:`, e);
         return null;
     }
 }
