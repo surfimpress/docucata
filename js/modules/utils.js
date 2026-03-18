@@ -47,6 +47,28 @@ export function getFileExtension(name) {
 }
 
 /**
+ * Detect file type from magic bytes. Worker-safe — accepts an ArrayBuffer.
+ * For ZIP files, also peeks at internal paths to distinguish OOXML/ODF.
+ * @param {ArrayBuffer} buffer — file content (at least first 2000 bytes for ZIP detection)
+ * @returns {{extension: string, mime: string, category: string}|null}
+ */
+export function detectFileTypeFromBuffer(buffer) {
+    if (buffer.byteLength < 4) return null;
+    const b = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 16));
+
+    const result = matchMagicBytes(b);
+    if (!result) return null;
+
+    // For ZIP, try to distinguish OOXML/ODF subtypes
+    if (result.extension === 'zip' && buffer.byteLength >= 30) {
+        const detected = detectZipSubtypeFromBuffer(buffer);
+        if (detected) return detected;
+    }
+
+    return result;
+}
+
+/**
  * Detect file type from magic bytes when the extension is missing or unrecognised.
  * Reads the first 16 bytes to match known file signatures.
  * @param {File} file
@@ -55,25 +77,30 @@ export function getFileExtension(name) {
 export async function detectFileType(file) {
     if (file.size < 4) return null;
 
-    const slice = file.slice(0, 16);
+    const slice = file.slice(0, 2000);
     const buf = await slice.arrayBuffer();
-    const b = new Uint8Array(buf);
+    return detectFileTypeFromBuffer(buf);
+}
 
+/**
+ * Match magic bytes against known file signatures.
+ * @param {Uint8Array} b — first 16 bytes
+ * @returns {{extension: string, mime: string, category: string}|null}
+ */
+function matchMagicBytes(b) {
     // PDF: %PDF
     if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
         return { extension: 'pdf', mime: 'application/pdf', category: 'Document' };
     }
 
-    // OLE2: D0 CF 11 E0 — .doc/.xls/.ppt (disambiguated later by parser)
+    // OLE2: D0 CF 11 E0
     if (b[0] === 0xD0 && b[1] === 0xCF && b[2] === 0x11 && b[3] === 0xE0) {
         return { extension: 'doc', mime: 'application/msword', category: 'Document' };
     }
 
-    // ZIP (PK\x03\x04) — could be docx/xlsx/pptx/odt/zip
+    // ZIP (PK\x03\x04)
     if (b[0] === 0x50 && b[1] === 0x4B && b[2] === 0x03 && b[3] === 0x04) {
-        // Try to peek at ZIP contents to distinguish Office XML from plain ZIP
-        const detected = await detectZipSubtype(file);
-        return detected || { extension: 'zip', mime: 'application/zip', category: 'Archive' };
+        return { extension: 'zip', mime: 'application/zip', category: 'Archive' };
     }
 
     // JPEG: FF D8 FF
@@ -91,7 +118,7 @@ export async function detectFileType(file) {
         return { extension: 'gif', mime: 'image/gif', category: 'Image' };
     }
 
-    // TIFF: II (49 49) or MM (4D 4D)
+    // TIFF: II or MM
     if ((b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A && b[3] === 0x00) ||
         (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00 && b[3] === 0x2A)) {
         return { extension: 'tiff', mime: 'image/tiff', category: 'Image' };
@@ -164,13 +191,13 @@ export async function detectFileType(file) {
 }
 
 /**
- * Peek inside a ZIP to distinguish Office XML formats from plain ZIPs.
+ * Peek inside a ZIP buffer to distinguish Office XML / ODF from plain ZIPs.
+ * @param {ArrayBuffer} buffer — at least 2000 bytes of the ZIP file
+ * @returns {{extension: string, mime: string, category: string}|null}
  */
-async function detectZipSubtype(file) {
-    // Read enough to find the first few ZIP local file headers
-    const slice = file.slice(0, 2000);
-    const buf = await slice.arrayBuffer();
-    const text = new TextDecoder('ascii').decode(new Uint8Array(buf));
+function detectZipSubtypeFromBuffer(buffer) {
+    const sample = new Uint8Array(buffer, 0, Math.min(buffer.byteLength, 2000));
+    const text = new TextDecoder('ascii').decode(sample);
 
     if (text.includes('word/')) {
         return { extension: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', category: 'Document' };
@@ -182,7 +209,6 @@ async function detectZipSubtype(file) {
         return { extension: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', category: 'Presentation' };
     }
     if (text.includes('META-INF/manifest.xml') || text.includes('content.xml')) {
-        // ODF (OpenDocument) — guess from mimetype file or content
         if (text.includes('opendocument.text')) return { extension: 'odt', mime: 'application/vnd.oasis.opendocument.text', category: 'Document' };
         if (text.includes('opendocument.spreadsheet')) return { extension: 'ods', mime: 'application/vnd.oasis.opendocument.spreadsheet', category: 'Spreadsheet' };
         if (text.includes('opendocument.presentation')) return { extension: 'odp', mime: 'application/vnd.oasis.opendocument.presentation', category: 'Presentation' };

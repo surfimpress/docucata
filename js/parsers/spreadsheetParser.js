@@ -6,11 +6,11 @@
  * @param {File} file
  * @returns {Promise<Object|null>} Structural metadata or null
  */
-export async function parseSpreadsheetMetadata(file) {
+export async function parseSpreadsheetMetadata(input) {
     if (typeof XLSX === 'undefined') return null;
 
     try {
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
         const wb = XLSX.read(buffer, { type: 'array', cellFormula: true, cellStyles: true });
 
         const info = {};
@@ -151,14 +151,14 @@ export async function parseSpreadsheetMetadata(file) {
                 .join(', ');
         }
 
-        console.group(`[Docucata:Spreadsheet] ${file.name}`);
+        console.group(`[Docucata:Spreadsheet] ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}`);
         console.log('Sheet metadata:', info);
         console.log('Sheet details:', sheetDetails);
         console.groupEnd();
 
         return info;
     } catch (e) {
-        console.warn(`[Docucata:Spreadsheet] Failed to parse ${file.name}:`, e);
+        console.warn(`[Docucata:Spreadsheet] Failed to parse ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}:`, e);
         return null;
     }
 }

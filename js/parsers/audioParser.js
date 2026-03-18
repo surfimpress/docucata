@@ -1,4 +1,47 @@
 /**
+ * Extract audio metadata from an ArrayBuffer. Worker-safe — no AudioContext.
+ * Binary tag parsers already compute duration for MP3, WAV, FLAC, OGG, and AIFF.
+ * @param {ArrayBuffer} buffer — full file content
+ * @param {string} extension — lowercase file extension
+ * @param {number} [fileSize] — original file size (for bitrate estimation)
+ * @returns {Promise<Object|null>}
+ */
+export async function parseAudioMetadataFromBuffer(buffer, extension, fileSize) {
+    try {
+        const bytes = new Uint8Array(buffer);
+        const info = {};
+
+        if (extension === 'mp3' || isMp3(bytes)) {
+            Object.assign(info, parseId3v2(bytes));
+            Object.assign(info, parseId3v1(bytes));
+            const mp3Info = parseMp3Frame(bytes);
+            if (mp3Info) Object.assign(info, mp3Info);
+        } else if (extension === 'wav' || extension === 'wave') {
+            Object.assign(info, parseWav(bytes));
+        } else if (extension === 'flac') {
+            Object.assign(info, parseFlac(bytes));
+        } else if (extension === 'ogg' || extension === 'oga') {
+            Object.assign(info, parseOgg(bytes));
+        } else if (extension === 'aif' || extension === 'aiff') {
+            Object.assign(info, parseAiff(bytes));
+        }
+
+        const size = fileSize || buffer.byteLength;
+        if (info.durationSeconds && info.durationSeconds > 0 && !info.bitrate) {
+            const kbps = Math.round((size * 8) / (info.durationSeconds * 1000));
+            info.bitrate = `${kbps} kbps`;
+        }
+
+        if (Object.keys(info).length === 0) return null;
+        info.format = extension?.toUpperCase();
+        return info;
+    } catch (e) {
+        console.warn(`[Docucata:Audio] Buffer parse failed for .${extension}:`, e);
+        return null;
+    }
+}
+
+/**
  * Extract metadata from audio files.
  * Supports: MP3 (ID3v1 + ID3v2), WAV (RIFF header), FLAC (Vorbis comments),
  * OGG (Vorbis comments), M4A/AAC (basic), AIFF.

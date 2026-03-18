@@ -16,9 +16,9 @@
  * @param {File} file
  * @returns {Promise<string|null>} Extracted plain text, or null
  */
-export async function extractDocText(file) {
+export async function extractDocText(input) {
     try {
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
         // Word for Macintosh 4.0 (pre-OLE2): magic bytes FE 37 00 1C

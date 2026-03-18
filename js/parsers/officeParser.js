@@ -4,13 +4,13 @@
  * @param {File} file
  * @returns {Promise<Object|null>} Parsed metadata or null
  */
-export async function parseOfficeMetadata(file) {
+export async function parseOfficeMetadata(input, extension) {
     try {
-        const ext = file.name.split('.').pop()?.toLowerCase();
+        const ext = extension || (input instanceof ArrayBuffer ? '' : input.name.split('.').pop()?.toLowerCase());
         const supported = ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'];
         if (!supported.includes(ext)) return null;
 
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
         // Verify ZIP signature (PK\x03\x04)
@@ -102,13 +102,13 @@ export async function parseOfficeMetadata(file) {
 
         if (Object.keys(info).length === 0) return null;
 
-        console.group(`[Docucata:Office] ${file.name}`);
+        console.group(`[Docucata:Office] ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}`);
         console.log('Office metadata:', info);
         console.groupEnd();
 
         return info;
     } catch (e) {
-        console.warn(`[Docucata:Office] Failed to parse ${file.name}:`, e);
+        console.warn(`[Docucata:Office] Failed to parse ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}:`, e);
         return null;
     }
 }
@@ -118,7 +118,7 @@ export async function parseOfficeMetadata(file) {
  * Uses the Central Directory for reliable size lookups (handles data descriptors).
  * Supports Store (0) and Deflate (8) compression methods.
  */
-async function extractFileFromZip(zipBytes, targetName) {
+export async function extractFileFromZip(zipBytes, targetName) {
     const targetLower = targetName.toLowerCase();
 
     // Locate the End of Central Directory record (scan backwards from end)

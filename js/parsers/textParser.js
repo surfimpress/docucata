@@ -6,9 +6,9 @@
  * @param {File} file
  * @returns {Promise<Object|null>}
  */
-export async function parseTextMetadata(file) {
+export async function parseTextMetadata(input) {
     try {
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         if (bytes.length === 0) return null;
 
@@ -87,13 +87,13 @@ export async function parseTextMetadata(file) {
             info.possiblyBinary = true;
         }
 
-        console.group(`[Docucata:Text] ${file.name}`);
+        console.group(`[Docucata:Text] ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}`);
         console.log('Text metadata:', info);
         console.groupEnd();
 
         return info;
     } catch (e) {
-        console.warn(`[Docucata:Text] Failed to parse ${file.name}:`, e);
+        console.warn(`[Docucata:Text] Failed to parse ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}:`, e);
         return null;
     }
 }

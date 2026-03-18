@@ -5,9 +5,9 @@
  * @param {File} file
  * @returns {Promise<Object|null>}
  */
-export async function parseOle2Metadata(file) {
+export async function parseOle2Metadata(input) {
     try {
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
         const bytes = new Uint8Array(buffer);
 
         // OLE2 signature: D0 CF 11 E0 A1 B1 1A E1
@@ -31,7 +31,7 @@ export async function parseOle2Metadata(file) {
         // Build mini stream context for small streams
         const miniCtx = buildMiniStreamContext(bytes, header, fat, dirEntries);
 
-        console.group(`[Docucata:OLE2] ${file.name}`);
+        console.group(`[Docucata:OLE2] ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}`);
         console.log(`Sector size: ${header.sectorSize}, FAT sectors: ${header.fatSectorCount}, Directory entries: ${dirEntries.length}`);
 
         // Find and parse SummaryInformation
@@ -73,7 +73,7 @@ export async function parseOle2Metadata(file) {
 
         return info;
     } catch (e) {
-        console.warn(`[Docucata:OLE2] Failed to parse ${file.name}:`, e);
+        console.warn(`[Docucata:OLE2] Failed to parse ${(input instanceof ArrayBuffer ? '(buffer)' : input.name)}:`, e);
         return null;
     }
 }

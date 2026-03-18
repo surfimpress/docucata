@@ -13,6 +13,7 @@
  */
 
 import { extractDocText } from '../parsers/docTextExtractor.js';
+import { extractFileFromZip } from '../parsers/officeParser.js';
 import { MAX_EXCERPT_BYTES } from './config.js';
 
 const TEXT_EXTS = [
@@ -54,6 +55,125 @@ export async function extractExcerpt(file, extension) {
         console.warn(`[Docucata:Excerpt] Failed for ${file.name}:`, e);
         return null;
     }
+}
+
+/**
+ * Extract a text excerpt from an ArrayBuffer. Worker-safe — no File/DOM APIs.
+ * Uses XML extraction for DOCX (no mammoth.js dependency).
+ * @param {ArrayBuffer} buffer — full file content
+ * @param {string} extension — lowercase file extension
+ * @returns {Promise<string|null>}
+ */
+export async function extractExcerptFromBuffer(buffer, extension) {
+    try {
+        if (TEXT_EXTS.includes(extension)) {
+            const slice = buffer.byteLength > MAX_EXCERPT_BYTES
+                ? buffer.slice(0, MAX_EXCERPT_BYTES) : buffer;
+            let text = new TextDecoder().decode(new Uint8Array(slice));
+            if (buffer.byteLength > MAX_EXCERPT_BYTES) text += '\n[…truncated]';
+            return text;
+        }
+        if (extension === 'pdf') {
+            return await excerptPdfFromBuffer(buffer);
+        }
+        if (extension === 'docx') {
+            return await excerptDocxFromBuffer(buffer);
+        }
+        if (extension === 'doc' || extension === 'dot') {
+            const text = await extractDocText(buffer);
+            return text ? truncate(text) : null;
+        }
+        if (extension === 'rtf') {
+            const raw = new TextDecoder().decode(new Uint8Array(buffer));
+            return truncate(stripRtf(raw));
+        }
+        if (SPREADSHEET_EXTS.includes(extension)) {
+            return excerptSpreadsheetFromBuffer(buffer);
+        }
+        return null;
+    } catch (e) {
+        console.warn(`[Docucata:Excerpt] Buffer extract failed for .${extension}:`, e);
+        return null;
+    }
+}
+
+// ── PDF from buffer (requires pdfjsLib in scope) ────────
+
+async function excerptPdfFromBuffer(buffer) {
+    // pdfjsLib may be loaded via dynamic import in worker or globally on main thread
+    const lib = typeof pdfjsLib !== 'undefined' ? pdfjsLib : null;
+    if (!lib) return null;
+
+    const pdf = await lib.getDocument({ data: buffer }).promise;
+
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        let prevY = null;
+        let prevHeight = 12;
+        let pageText = '';
+        for (const item of content.items) {
+            if (item.str === undefined) continue;
+            const y = item.transform ? item.transform[5] : null;
+            const h = item.height || prevHeight;
+            if (prevY !== null && y !== null) {
+                const gap = Math.abs(y - prevY);
+                if (gap > 2) {
+                    if (!pageText.endsWith('\n')) {
+                        pageText += (gap > h * 1.5) ? '\n\n' : '\n';
+                    } else if (gap > h * 1.5 && !pageText.endsWith('\n\n')) {
+                        pageText += '\n';
+                    }
+                }
+            }
+            pageText += item.str;
+            if (item.hasEOL) pageText += '\n';
+            if (y !== null) prevY = y;
+            if (h > 0) prevHeight = h;
+        }
+        text += pageText.trimEnd() + '\n\n';
+        if (text.length >= MAX_EXCERPT_BYTES) break;
+    }
+    return truncate(text.trim());
+}
+
+// ── DOCX from buffer via XML extraction ─────────────────
+
+async function excerptDocxFromBuffer(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const xml = await extractFileFromZip(bytes, 'word/document.xml');
+    if (!xml) return null;
+    // Strip XML tags to get plain text
+    const text = xml
+        .replace(/<w:p[^>]*\/>/gi, '\n')           // self-closing paragraphs
+        .replace(/<\/w:p>/gi, '\n')                 // paragraph ends
+        .replace(/<w:tab\/>/gi, '\t')               // tabs
+        .replace(/<w:br[^>]*\/>/gi, '\n')           // line breaks
+        .replace(/<[^>]+>/g, '')                    // all remaining tags
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+    return truncate(text);
+}
+
+// ── Spreadsheet from buffer (requires XLSX in scope) ────
+
+function excerptSpreadsheetFromBuffer(buffer) {
+    const lib = typeof XLSX !== 'undefined' ? XLSX : null;
+    if (!lib) return null;
+
+    const wb = lib.read(buffer, { type: 'array' });
+    let csv = '';
+    for (const name of wb.SheetNames) {
+        const ws = wb.Sheets[name];
+        if (!ws || !ws['!ref']) continue;
+        if (wb.SheetNames.length > 1) csv += `--- ${name} ---\n`;
+        csv += lib.utils.sheet_to_csv(ws) + '\n';
+        if (csv.length >= MAX_EXCERPT_BYTES) break;
+    }
+    return truncate(csv.trim());
 }
 
 // ── Plain text ──────────────────────────────────────────

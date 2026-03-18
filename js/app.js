@@ -1,5 +1,6 @@
 import { initDropZone, initFilePicker } from './modules/fileHandler.js';
 import { extractMetadata } from './modules/metadataExtractor.js';
+import { initPipeline, captureBatch, processDeep, resumeIncomplete } from './modules/pipelineManager.js';
 import { renderTable, clearTable, onCellEdit, onUnpack, onView, onDelete, createColumnSelector } from './modules/tableRenderer.js';
 import { mergeMetadata } from './modules/storage.js';
 import { exportToCsv, exportToJson } from './modules/csvExport.js';
@@ -372,6 +373,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Startup ─────────────────────────────────────────
 
     (async () => {
+        // Initialize worker pool (non-blocking — falls back to main thread if unsupported)
+        initPipeline();
+
         // Migrate legacy data if present (localStorage → IndexedDB)
         const migrated = await migrateLegacyData();
         if (migrated) {
@@ -383,6 +387,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeId && getBatch(activeId)) {
             currentMetadata = await loadBatchMetadata(activeId);
             nextSeq = computeNextSeq(currentMetadata);
+
+            // Backfill _status for records from before the pipeline was added
+            for (const item of currentMetadata) {
+                if (!item._status) item._status = 'complete';
+            }
+
             renderTable(gridWrapper, sortedMetadata());
             updateCount();
             updateBatchLabel();
@@ -391,6 +401,45 @@ document.addEventListener('DOMContentLoaded', () => {
             await cleanOrphans(currentMetadata);
             renderTable(gridWrapper, sortedMetadata());
             updateCacheStatus();
+
+            // Resume any incomplete processing from a prior session
+            const resumed = await resumeIncomplete(
+                currentMetadata,
+                loadSingleFile,
+                {
+                    onFileComplete: (fileId, result) => {
+                        const record = currentMetadata.find(m => m.id === fileId);
+                        if (record) {
+                            record.deepMeta = result.deepMeta;
+                            record.excerpt = result.excerpt || '';
+                            record.createdDate = result.createdDate;
+                            record.author = result.author;
+                            record.title = result.title;
+                            record.language = result.language || '';
+                            record.extent = result.extent || '';
+                            record._status = 'complete';
+                        }
+                        scheduleTableRefresh();
+                        scheduleAutoSave();
+                    },
+                    onProgress: (done, total) => {
+                        showProgress(`Resuming analysis: ${done} of ${total}`, Math.round((done / total) * 100), '');
+                    },
+                    onAllComplete: () => {
+                        hideProgress();
+                        renderTable(gridWrapper, sortedMetadata());
+                        autoSave();
+                    },
+                    onError: (fileId, errorMsg) => {
+                        const record = currentMetadata.find(m => m.id === fileId);
+                        if (record) record._status = 'error';
+                        scheduleTableRefresh();
+                    },
+                }
+            );
+            if (resumed > 0) {
+                showToast(`Resuming analysis of ${resumed} file${resumed !== 1 ? 's' : ''}`);
+            }
         } else {
             updateBatchLabel();
             updateCacheStatus();
@@ -438,6 +487,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!activeId) return;
         await saveBatchMetadata(activeId, currentMetadata);
         saveFiles(currentMetadata).then(() => updateCacheStatus());
+    }
+
+    // Debounced variants for Tier 2 streaming (avoid thrashing during rapid results)
+    let refreshTimer = null;
+    function scheduleTableRefresh() {
+        if (refreshTimer) return;
+        refreshTimer = setTimeout(() => {
+            refreshTimer = null;
+            renderTable(gridWrapper, sortedMetadata());
+        }, 200);
+    }
+
+    let saveTimer = null;
+    function scheduleAutoSave() {
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+            saveTimer = null;
+            autoSave();
+        }, 1000);
     }
 
     // ── Cell editing ────────────────────────────────────
@@ -489,49 +557,79 @@ document.addEventListener('DOMContentLoaded', () => {
 
         showProgress(
             isSingle
-                ? `Processing ${fileEntries[0].file.name}`
-                : `Processing ${totalFiles} files (${formatBytes(totalBytes)})`,
+                ? `Capturing ${fileEntries[0].file.name}`
+                : `Capturing ${totalFiles} files (${formatBytes(totalBytes)})`,
             0,
             isSingle ? formatBytes(totalBytes) : 'Starting\u2026'
         );
 
-        // Yield so the browser paints the initial progress state
         await new Promise(r => setTimeout(r, 0));
 
         try {
             ensureActiveBatch();
-            const incoming = await extractMetadata(fileEntries, 'local', (p) => {
-                const pct = Math.round((p.done / p.total) * 100);
-                if (isSingle) {
-                    showProgress(
-                        `Processing ${p.fileName}`,
-                        100,
-                        `${formatBytes(p.bytesProcessed)} — extracting metadata`
-                    );
-                } else {
-                    showProgress(
-                        `${p.done} of ${p.total} files processed`,
-                        pct,
-                        `${p.fileName} (${formatBytes(p.bytesProcessed)} of ${formatBytes(p.totalBytes)})`
-                    );
-                }
-            });
 
-            showProgress(
-                isSingle ? 'Finishing up\u2026' : `Saving ${incoming.length} files\u2026`,
-                100,
-                ''
-            );
-            await new Promise(r => setTimeout(r, 0));
+            // ── Tier 1: Capture — fast, files appear in table immediately ──
+            const incoming = await captureBatch(fileEntries, (p) => {
+                const pct = Math.round((p.done / p.total) * 100);
+                showProgress(
+                    `Captured ${p.done} of ${p.total} files`,
+                    pct,
+                    p.fileName
+                );
+            });
 
             assignSeq(incoming);
             assignReferenceCodes(incoming);
             currentMetadata = mergeMetadata(currentMetadata, incoming);
             renderTable(gridWrapper, sortedMetadata());
             updateCount();
-            autoSave();
-            hideProgress();
-            showToast(`${incoming.length} file${incoming.length !== 1 ? 's' : ''} added`);
+            await autoSave();
+
+            showToast(`${incoming.length} file${incoming.length !== 1 ? 's' : ''} captured`);
+
+            // ── Tier 2: Deep processing — streamed results ──
+            const tier2Total = incoming.length;
+            showProgress(`Analyzing metadata\u2026`, 0, `0 of ${tier2Total} files`);
+
+            processDeep(incoming, {
+                onFileComplete: (fileId, result) => {
+                    const record = currentMetadata.find(m => m.id === fileId);
+                    if (record) {
+                        record.deepMeta = result.deepMeta;
+                        record.excerpt = result.excerpt || '';
+                        record.createdDate = result.createdDate;
+                        record.author = result.author;
+                        record.title = result.title;
+                        record.language = result.language || '';
+                        record.extent = result.extent || '';
+                        record._status = 'complete';
+                    }
+                    scheduleTableRefresh();
+                    scheduleAutoSave();
+                },
+                onProgress: (done, total) => {
+                    const pct = Math.round((done / total) * 100);
+                    showProgress(
+                        `Analyzed ${done} of ${total} files`,
+                        pct,
+                        `${total - done} remaining`
+                    );
+                },
+                onAllComplete: () => {
+                    hideProgress();
+                    showToast('Metadata extraction complete');
+                    renderTable(gridWrapper, sortedMetadata());
+                    autoSave();
+                },
+                onError: (fileId, errorMsg) => {
+                    const record = currentMetadata.find(m => m.id === fileId);
+                    if (record) {
+                        record._status = 'error';
+                    }
+                    console.warn(`[Docucata] Tier 2 error for ${fileId}:`, errorMsg);
+                    scheduleTableRefresh();
+                },
+            });
         } catch (e) {
             hideProgress();
             console.error('[Docucata] Error processing files:', e);

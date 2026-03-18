@@ -1,14 +1,20 @@
 /**
  * Extract metadata from RTF files.
  * RTF stores metadata in the {\info ...} group with fields like \title, \author, \creatim, etc.
- * @param {File} file
+ * Accepts either a File or an ArrayBuffer (worker-safe when given ArrayBuffer).
+ * @param {File|ArrayBuffer} input
  * @returns {Promise<Object|null>}
  */
-export async function parseRtfMetadata(file) {
+export async function parseRtfMetadata(input) {
     try {
         // Read first 32KB - metadata is always near the start
-        var slice = file.slice(0, 32768);
-        var text = await slice.text();
+        var text;
+        if (input instanceof ArrayBuffer) {
+            text = new TextDecoder().decode(new Uint8Array(input).slice(0, 32768));
+        } else {
+            var slice = input.slice(0, 32768);
+            text = await slice.text();
+        }
 
         if (!text.startsWith("{\\rtf")) return null;
 
@@ -110,13 +116,15 @@ export async function parseRtfMetadata(file) {
 
         if (Object.keys(info).length === 0) return null;
 
-        console.group("[Docucata:RTF] " + file.name);
+        const name = input instanceof ArrayBuffer ? '(buffer)' : input.name;
+        console.group("[Docucata:RTF] " + name);
         console.log("RTF metadata:", info);
         console.groupEnd();
 
         return info;
     } catch (e) {
-        console.warn("[Docucata:RTF] Failed to parse " + file.name + ":", e);
+        const name = input instanceof ArrayBuffer ? '(buffer)' : input.name;
+        console.warn("[Docucata:RTF] Failed to parse " + name + ":", e);
         return null;
     }
 }

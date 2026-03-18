@@ -390,6 +390,8 @@ function metadataToFullRows(metadataArray) {
     return metadataArray.map(item => {
         const ext = item.extension?.toLowerCase();
         const hasDeepMeta = item.deepMeta && Object.keys(item.deepMeta).length > 0;
+        const isAnalyzing = item._status === 'captured' || item._status === 'processing';
+        const isError = item._status === 'error';
 
         // Build comma-separated action flags
         const flags = [];
@@ -398,6 +400,9 @@ function metadataToFullRows(metadataArray) {
         if (item._file && ARCHIVE_EXTS.includes(ext)) {
             flags.push(item._unpacked ? 'unpacked' : 'unpack');
         }
+
+        // Status placeholder for fields that Tier 2 hasn't populated yet
+        const pending = isAnalyzing ? '\u23F3' : (isError ? '\u26A0' : '');
 
         return {
             refCode: item.referenceCode || '',
@@ -408,9 +413,9 @@ function metadataToFullRows(metadataArray) {
             mime: item.type || '',
             size: formatBytes(item.size),
             modified: formatDate(item.lastModified),
-            created: item.createdDate ? formatDate(item.createdDate) : '',
-            author: item.author || '',
-            title: item.title || '',
+            created: item.createdDate ? formatDate(item.createdDate) : pending,
+            author: item.author || pending,
+            title: item.title || pending,
             description: item.description || '',
             level: item.levelOfDescription || '',
             language: item.language || '',

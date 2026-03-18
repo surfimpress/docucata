@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-03-14
+
+### Web Worker Pool & Two-Tier Processing Pipeline
+Major architectural refactoring for scale. Processing is now split into two tiers:
+
+**Tier 1 — Capture (main thread, fast)**
+- Files appear in the table within moments of being dropped
+- `file.arrayBuffer()` read in parallel batches of 10 (`TIER1_CONCURRENCY`)
+- Magic byte detection, skeleton metadata record with `_status: 'captured'`
+- Immediately persisted to IDB file cache + batch metadata
+
+**Tier 2 — Deep Processing (worker pool)**
+- Full metadata extraction + excerpt generation runs in a pool of Web Workers
+- Pool sized to `navigator.hardwareConcurrency` (clamped 2–6)
+- ArrayBuffers transferred to workers via zero-copy `Transferable` objects
+- Results stream back to main thread; table and IDB updated via debounced refresh (200ms) and save (1s)
+- Status transitions: `captured → processing → complete | error`
+
+**New files:**
+- `js/workers/parserWorker.js` — module worker entry point; imports shared parsers, loads pdf.js via `import()` and SheetJS via `fetch()+eval()`
+- `js/modules/workerPool.js` — pool manager with backpressure queue, crash recovery (1 retry + respawn), graceful shutdown
+- `js/modules/pipelineManager.js` — two-tier orchestrator: `captureBatch()`, `processDeep()`, `resumeIncomplete()`
+
+**Crash recovery & resilience:**
+- Worker crash detected via `onerror`; task re-queued once, worker respawned
+- On page reload, records with `_status !== 'complete'` are re-queued to Tier 2 automatically
+- If a file's binary cache was LRU-evicted, record marked as `error` with a note to re-drop
+- Falls back to sequential main-thread processing if module workers are unsupported
+
+**Parser adaptations for worker safety:**
+- `imageParser.js`: Binary dimension extraction from PNG IHDR, GIF header, BMP DIB, WebP VP8/VP8L/VP8X; new HEIC/HEIF ISOBMFF `ispe` box parser; new `parseImageMetadataFromBuffer()` export; DOM `Image` API now fallback only
+- `audioParser.js`: New `parseAudioMetadataFromBuffer()` — binary tag parsers only (skips `AudioContext`); duration available for MP3, WAV, FLAC, OGG, AIFF from headers
+- `exifParser.js`: New `parseExifMetadataFromBuffer(buffer, extension)` export
+- `rtfParser.js`: Now accepts `File | ArrayBuffer` input
+- `excerptExtractor.js`: New `extractExcerptFromBuffer()` — DOCX excerpts now use ZIP XML extraction (strips `word/document.xml` tags) instead of mammoth.js
+- `officeParser.js`: `extractFileFromZip()` exported (was private); `parseOfficeMetadata()` accepts optional `extension` parameter
+- All parsers (pdf, office, ole2, text, spreadsheet, docTextExtractor) now accept `File | ArrayBuffer` via `input instanceof ArrayBuffer` pattern
+
+**Shared source refactoring:**
+- `localProvider.js` gutted from 193-line sequential loop into two pure functions: `dispatchParsers(buffer, ext, category, fileSize)` and `normalizeFields(deepMeta)` — importable by both main thread and worker
+- `metadataExtractor.js` rewritten as backward-compatible bridge using shared source
+- `utils.js`: `detectFileType()` refactored — shared `matchMagicBytes()` + `detectZipSubtypeFromBuffer()` helpers; new `detectFileTypeFromBuffer(buffer)` export
+
+**UI changes:**
+- Table shows hourglass icon for records being analyzed, warning icon for errors
+- Progress bar shows two phases: "Captured N of M" then "Analyzed N of M"
+- `config.js` gains `WORKER_POOL_MIN/MAX`, `WORKER_SCRIPT`, `TIER1_CONCURRENCY`, CDN URL constants
+
 ## 2026-03-06
 
 ### Mapping Editor: Fallback Metadata Chains

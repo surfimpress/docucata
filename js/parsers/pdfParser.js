@@ -2,12 +2,14 @@
  * Extract metadata from a PDF file.
  * Primary method: uses pdf.js (if loaded) which properly decompresses object streams.
  * Fallback: raw byte scanning for uncompressed PDFs.
- * @param {File} file
+ * Accepts either a File or an ArrayBuffer (worker-safe when given ArrayBuffer).
+ * @param {File|ArrayBuffer} input
  * @returns {Promise<Object|null>} Parsed metadata or null if not a PDF / parse failure
  */
-export async function parsePdfMetadata(file) {
+export async function parsePdfMetadata(input) {
     try {
-        const buffer = await file.arrayBuffer();
+        const buffer = input instanceof ArrayBuffer ? input : await input.arrayBuffer();
+        const label = input instanceof ArrayBuffer ? '(buffer)' : input.name;
         const bytes = new Uint8Array(buffer);
 
         // Verify PDF signature
@@ -18,7 +20,7 @@ export async function parsePdfMetadata(file) {
         if (typeof pdfjsLib !== 'undefined') {
             const result = await parsePdfWithPdfjs(buffer, head);
             if (result && Object.keys(result).length > 0) {
-                console.group(`[Docucata:PDF] ${file.name}`);
+                console.group(`[Docucata:PDF] ${label}`);
                 console.log('PDF metadata (via pdf.js):', result);
                 console.groupEnd();
                 return result;
@@ -29,13 +31,14 @@ export async function parsePdfMetadata(file) {
         const text = new TextDecoder('latin1').decode(bytes);
         const result = parsePdfWithRegex(text);
 
-        console.group(`[Docucata:PDF] ${file.name}`);
+        console.group(`[Docucata:PDF] ${label}`);
         console.log('PDF metadata (regex fallback):', result);
         console.groupEnd();
 
         return result && Object.keys(result).length > 0 ? result : null;
     } catch (e) {
-        console.warn(`[Docucata:PDF] Failed to parse ${file.name}:`, e);
+        const label = input instanceof ArrayBuffer ? '(buffer)' : input.name;
+        console.warn(`[Docucata:PDF] Failed to parse ${label}:`, e);
         return null;
     }
 }

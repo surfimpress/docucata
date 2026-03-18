@@ -1,3 +1,5 @@
+> **Note:** This is the original requirements document written before development began. For current architecture and capabilities, see `CLAUDE.md`. The actual implementation diverged significantly — notably, the app uses hand-written binary parsers instead of exif-js, native `fetch()` instead of Axios, and does not yet include SharePoint integration.
+
 # Docucata
 
 Purpose - this utility will have a web front end, but could have a node back end if need be. If possible to run purely in a static page, that would be fantastic.

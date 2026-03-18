@@ -1,4 +1,35 @@
 /**
+ * Extract EXIF metadata from an ArrayBuffer. Worker-safe — no DOM/File APIs.
+ * @param {ArrayBuffer} buffer — file content (or at least first 128KB)
+ * @param {string} extension — lowercase file extension
+ * @returns {Promise<Object|null>}
+ */
+export async function parseExifMetadataFromBuffer(buffer, extension) {
+    try {
+        const supported = ['jpg', 'jpeg', 'tiff', 'tif', 'heic', 'heif'];
+        if (!supported.includes(extension)) return null;
+
+        const view = new DataView(buffer);
+
+        // JPEG: look for APP1 marker
+        if (view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8) {
+            return parseJpegExif(view, `buffer.${extension}`);
+        }
+
+        // TIFF: starts with byte order mark
+        if ((view.getUint8(0) === 0x49 && view.getUint8(1) === 0x49) ||
+            (view.getUint8(0) === 0x4D && view.getUint8(1) === 0x4D)) {
+            return parseTiffExif(view, 0, `buffer.${extension}`);
+        }
+
+        return null;
+    } catch (e) {
+        console.warn(`[Docucata:EXIF] Buffer parse failed for .${extension}:`, e);
+        return null;
+    }
+}
+
+/**
  * Extract EXIF metadata from JPEG/TIFF files by reading raw bytes.
  * @param {File} file
  * @returns {Promise<Object|null>} Parsed EXIF data or null

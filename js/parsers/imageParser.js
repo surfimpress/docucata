@@ -1,7 +1,8 @@
 /**
  * Image metadata extractor — works for all image formats.
  * Combines:
- * - Browser Image API: dimensions (all formats)
+ * - Browser Image API: dimensions (all formats) — main thread only
+ * - Binary header parsing: dimensions from PNG IHDR, GIF header, BMP DIB, WebP, HEIC — worker safe
  * - PNG chunk parsing: color type, bit depth, alpha, gamma, ICC, text chunks
  * - GIF header: dimensions, color table, version
  * - BMP header: dimensions, bit depth
@@ -9,7 +10,7 @@
  * - EXIF (JPEG/TIFF): delegated to exifParser.js
  */
 
-import { parseExifMetadata } from './exifParser.js';
+import { parseExifMetadata, parseExifMetadataFromBuffer } from './exifParser.js';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico',
                     'tiff', 'tif', 'heic', 'heif'];
@@ -23,47 +24,28 @@ export async function parseImageMetadata(file) {
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (!IMAGE_EXTS.includes(ext)) return null;
 
-    const meta = {};
-
     try {
-        // Get dimensions via browser's Image API (works for all decodable formats)
-        const dims = await getImageDimensions(file);
-        if (dims) {
-            meta.Width = dims.width;
-            meta.Height = dims.height;
-            meta.AspectRatio = simplifyRatio(dims.width, dims.height);
-            meta.Megapixels = ((dims.width * dims.height) / 1_000_000).toFixed(1) + ' MP';
-        }
-
-        // Format-specific binary parsing
+        // Binary parsing first (worker-safe path)
         const slice = file.slice(0, 131072); // first 128KB
         const buffer = await slice.arrayBuffer();
-        const view = new DataView(buffer);
+        const meta = await parseImageMetadataFromBuffer(buffer, ext) || {};
 
-        if (ext === 'png') {
-            Object.assign(meta, parsePngChunks(view, buffer));
-        } else if (ext === 'gif') {
-            Object.assign(meta, parseGifHeader(view));
-        } else if (ext === 'bmp') {
-            Object.assign(meta, parseBmpHeader(view));
-        } else if (ext === 'webp') {
-            Object.assign(meta, await parseWebpHeader(view, buffer));
-        } else if (ext === 'svg') {
-            Object.assign(meta, await parseSvgMetadata(file));
-        } else if (ext === 'ico') {
-            Object.assign(meta, parseIcoHeader(view));
+        // Fallback: DOM Image API for dimensions if binary parsing didn't find them
+        if (!meta.Width || !meta.Height) {
+            const dims = await getImageDimensions(file);
+            if (dims) {
+                meta.Width = dims.width;
+                meta.Height = dims.height;
+                meta.AspectRatio = simplifyRatio(dims.width, dims.height);
+                meta.Megapixels = ((dims.width * dims.height) / 1_000_000).toFixed(1) + ' MP';
+            }
         }
 
-        // JPEG/TIFF — merge EXIF on top
-        if (['jpg', 'jpeg', 'tiff', 'tif', 'heic', 'heif'].includes(ext)) {
-            const exif = await parseExifMetadata(file);
-            if (exif) Object.assign(meta, exif);
-        }
+        return Object.keys(meta).length > 0 ? meta : null;
     } catch (e) {
         console.warn(`[Docucata:Image] Failed to parse ${file.name}:`, e);
+        return null;
     }
-
-    return Object.keys(meta).length > 0 ? meta : null;
 }
 
 // ── Browser Image API ───────────────────────────────────
@@ -121,6 +103,8 @@ function parsePngChunks(view, buffer) {
         if (dataEnd > view.byteLength) break;
 
         if (chunkType === 'IHDR' && chunkLen >= 13) {
+            meta.Width = view.getUint32(dataStart);
+            meta.Height = view.getUint32(dataStart + 4);
             meta.BitDepth = view.getUint8(dataStart + 8);
             const colorType = view.getUint8(dataStart + 9);
             meta.ColorType = PNG_COLOR_TYPES[colorType] || `Unknown (${colorType})`;
@@ -241,6 +225,8 @@ function parseGifHeader(view) {
     if (!sig.startsWith('GIF')) return meta;
 
     meta.GIFVersion = sig;
+    meta.Width = view.getUint16(6, true);
+    meta.Height = view.getUint16(8, true);
     meta.ColorSpace = 'Indexed';
 
     const packed = view.getUint8(10);
@@ -313,6 +299,8 @@ function parseBmpHeader(view) {
                      `${dibHeaderSize} bytes`;
 
     if (dibHeaderSize >= 40) {
+        meta.Width = view.getInt32(18, true);
+        meta.Height = Math.abs(view.getInt32(22, true));
         const bpp = view.getUint16(28, true);
         meta.BitsPerPixel = bpp;
         meta.AlphaChannel = bpp === 32 ? 'Likely' : 'No';
@@ -356,6 +344,17 @@ async function parseWebpHeader(view, buffer) {
     if (chunkType === 'VP8 ' && view.byteLength >= 30) {
         meta.WebPFormat = 'Lossy (VP8)';
         meta.Compression = 'Lossy';
+        // VP8 bitstream: 3 bytes frame tag, then 3-byte sync code 9D 01 2A, then width/height
+        const chunkDataStart = 20; // 12 (RIFF+WEBP) + 4 (VP8 ) + 4 (size)
+        if (view.byteLength >= chunkDataStart + 10) {
+            const sync0 = view.getUint8(chunkDataStart + 3);
+            const sync1 = view.getUint8(chunkDataStart + 4);
+            const sync2 = view.getUint8(chunkDataStart + 5);
+            if (sync0 === 0x9D && sync1 === 0x01 && sync2 === 0x2A) {
+                meta.Width = view.getUint16(chunkDataStart + 6, true) & 0x3FFF;
+                meta.Height = view.getUint16(chunkDataStart + 8, true) & 0x3FFF;
+            }
+        }
     } else if (chunkType === 'VP8L' && view.byteLength >= 25) {
         meta.WebPFormat = 'Lossless (VP8L)';
         meta.Compression = 'Lossless';
@@ -364,6 +363,8 @@ async function parseWebpHeader(view, buffer) {
             const bits = view.getUint32(22, true);
             const w = (bits & 0x3FFF) + 1;
             const h = ((bits >> 14) & 0x3FFF) + 1;
+            meta.Width = w;
+            meta.Height = h;
             const hasAlpha = (bits >> 28) & 1;
             meta.AlphaChannel = hasAlpha ? 'Yes' : 'No';
         }
@@ -372,6 +373,9 @@ async function parseWebpHeader(view, buffer) {
         const flags = view.getUint8(20);
         meta.AlphaChannel = (flags & 0x10) ? 'Yes' : 'No';
         meta.Animated = (flags & 0x02) ? 'Yes' : 'No';
+        // Canvas size: 24-bit little-endian + 1
+        meta.Width = (view.getUint8(24) | (view.getUint8(25) << 8) | (view.getUint8(26) << 16)) + 1;
+        meta.Height = (view.getUint8(27) | (view.getUint8(28) << 8) | (view.getUint8(29) << 16)) + 1;
         const hasICCP = flags & 0x20;
         const hasExif = flags & 0x08;
         const hasXMP = flags & 0x04;
@@ -391,41 +395,16 @@ async function parseWebpHeader(view, buffer) {
     return meta;
 }
 
-// ── SVG ─────────────────────────────────────────────────
+// ── SVG (main thread — delegates to shared helper) ─────
 
 async function parseSvgMetadata(file) {
-    const meta = {};
     try {
         const text = await file.text();
-        // Quick regex extraction from the SVG root element
-        const svgMatch = text.match(/<svg[^>]*>/i);
-        if (svgMatch) {
-            const root = svgMatch[0];
-            const widthMatch = root.match(/\bwidth\s*=\s*["']([^"']+)/);
-            const heightMatch = root.match(/\bheight\s*=\s*["']([^"']+)/);
-            const viewBoxMatch = root.match(/viewBox\s*=\s*["']([^"']+)/);
-
-            if (widthMatch) meta.SVGWidth = widthMatch[1];
-            if (heightMatch) meta.SVGHeight = heightMatch[1];
-            if (viewBoxMatch) meta.ViewBox = viewBoxMatch[1];
-        }
-
-        // Look for <title> and <desc>
-        const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
-        const descMatch = text.match(/<desc[^>]*>([^<]+)<\/desc>/i);
-        if (titleMatch) meta.SVGTitle = titleMatch[1].trim();
-        if (descMatch) meta.SVGDescription = descMatch[1].trim();
-
-        meta.ColorSpace = 'Vector (SVG)';
-        meta.Format = 'SVG/XML';
-
-        // Rough element count for complexity
-        const elementCount = (text.match(/<[a-zA-Z]/g) || []).length;
-        meta.ElementCount = elementCount;
+        return parseSvgMetadataFromText(text);
     } catch (e) {
         console.warn('[Docucata:Image] SVG parse error:', e);
+        return {};
     }
-    return meta;
 }
 
 // ── ICO ─────────────────────────────────────────────────
@@ -453,6 +432,125 @@ function parseIcoHeader(view) {
     if (sizes.length > 0) meta.Sizes = sizes.join(', ');
 
     return meta;
+}
+
+// ── SVG (from buffer) ───────────────────────────────────
+
+function parseSvgMetadataFromText(text) {
+    const meta = {};
+    const svgMatch = text.match(/<svg[^>]*>/i);
+    if (svgMatch) {
+        const root = svgMatch[0];
+        const widthMatch = root.match(/\bwidth\s*=\s*["']([^"']+)/);
+        const heightMatch = root.match(/\bheight\s*=\s*["']([^"']+)/);
+        const viewBoxMatch = root.match(/viewBox\s*=\s*["']([^"']+)/);
+
+        if (widthMatch) meta.SVGWidth = widthMatch[1];
+        if (heightMatch) meta.SVGHeight = heightMatch[1];
+        if (viewBoxMatch) meta.ViewBox = viewBoxMatch[1];
+    }
+
+    const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const descMatch = text.match(/<desc[^>]*>([^<]+)<\/desc>/i);
+    if (titleMatch) meta.SVGTitle = titleMatch[1].trim();
+    if (descMatch) meta.SVGDescription = descMatch[1].trim();
+
+    meta.ColorSpace = 'Vector (SVG)';
+    meta.Format = 'SVG/XML';
+    const elementCount = (text.match(/<[a-zA-Z]/g) || []).length;
+    meta.ElementCount = elementCount;
+    return meta;
+}
+
+// ── HEIC/HEIF (ISOBMFF) ────────────────────────────────
+
+function parseHeicDimensions(view) {
+    const meta = {};
+    if (view.byteLength < 12) return meta;
+
+    // Walk ISOBMFF boxes looking for 'ispe' (image spatial extents)
+    let offset = 0;
+    while (offset + 8 <= view.byteLength) {
+        const size = view.getUint32(offset);
+        const type = String.fromCharCode(
+            view.getUint8(offset + 4), view.getUint8(offset + 5),
+            view.getUint8(offset + 6), view.getUint8(offset + 7)
+        );
+
+        if (size < 8) break; // invalid box
+        if (size > view.byteLength) break;
+
+        if (type === 'ispe' && offset + 16 <= view.byteLength) {
+            // ispe box: version(4) + width(4) + height(4)
+            meta.Width = view.getUint32(offset + 12);
+            meta.Height = view.getUint32(offset + 16);
+            break;
+        }
+
+        // Container boxes — descend into them
+        const containers = ['moov', 'meta', 'iprp', 'ipco', 'ftyp'];
+        if (containers.includes(type)) {
+            // For 'meta' box, skip the 4-byte version/flags field
+            const headerLen = type === 'meta' ? 12 : 8;
+            offset += headerLen;
+            continue;
+        }
+
+        offset += size;
+    }
+    return meta;
+}
+
+// ── Worker-safe buffer-based entry point ────────────────
+
+/**
+ * Extract image metadata from an ArrayBuffer. Worker-safe — no DOM APIs.
+ * @param {ArrayBuffer} buffer — full file buffer (or at least first 128KB)
+ * @param {string} extension — lowercase file extension
+ * @returns {Promise<Object|null>}
+ */
+export async function parseImageMetadataFromBuffer(buffer, extension) {
+    if (!IMAGE_EXTS.includes(extension)) return null;
+
+    const meta = {};
+
+    try {
+        const headerBuf = buffer.byteLength > 131072 ? buffer.slice(0, 131072) : buffer;
+        const view = new DataView(headerBuf);
+
+        if (extension === 'png') {
+            Object.assign(meta, parsePngChunks(view, headerBuf));
+        } else if (extension === 'gif') {
+            Object.assign(meta, parseGifHeader(view));
+        } else if (extension === 'bmp') {
+            Object.assign(meta, parseBmpHeader(view));
+        } else if (extension === 'webp') {
+            Object.assign(meta, await parseWebpHeader(view, headerBuf));
+        } else if (extension === 'svg') {
+            const text = new TextDecoder().decode(new Uint8Array(buffer));
+            Object.assign(meta, parseSvgMetadataFromText(text));
+        } else if (extension === 'ico') {
+            Object.assign(meta, parseIcoHeader(view));
+        } else if (extension === 'heic' || extension === 'heif') {
+            Object.assign(meta, parseHeicDimensions(view));
+        }
+
+        // JPEG/TIFF — merge EXIF on top (dimensions come from EXIF IFD tags)
+        if (['jpg', 'jpeg', 'tiff', 'tif', 'heic', 'heif'].includes(extension)) {
+            const exif = await parseExifMetadataFromBuffer(headerBuf, extension);
+            if (exif) Object.assign(meta, exif);
+        }
+
+        // Compute derived dimension fields if we got Width/Height from binary parsing
+        if (meta.Width && meta.Height) {
+            if (!meta.AspectRatio) meta.AspectRatio = simplifyRatio(meta.Width, meta.Height);
+            if (!meta.Megapixels) meta.Megapixels = ((meta.Width * meta.Height) / 1_000_000).toFixed(1) + ' MP';
+        }
+    } catch (e) {
+        console.warn(`[Docucata:Image] Buffer parse failed for .${extension}:`, e);
+    }
+
+    return Object.keys(meta).length > 0 ? meta : null;
 }
 
 // ── WebP EXIF extraction ────────────────────────────────
