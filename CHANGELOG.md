@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-03-18
+
+### TIFF Preview Support
+- TIFF files now render in the viewer via **UTIF.js** canvas decoding — cross-browser support for LZW, CMYK, 16-bit, and other TIFF variants that browsers can't display natively via `<img>`
+- Added `tiff`/`tif` to `VIEWABLE_EXTS` and `IMAGE_EXTS` in the viewer
+- UTIF.js loaded via CDN (`cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js`) — ~30KB UMD bundle
+- TIFF metadata extraction (EXIF/GPS) was already supported — this change adds pixel rendering only
+
+### Video Metadata & Preview (MP4, MOV, M4V)
+- New parser: `js/parsers/videoParser.js` — ISO BMFF container box parsing
+- Extracts: duration, dimensions, rotation, creation date (Mac epoch → ISO 8601), video/audio codec identification, major brand, track count, timescale
+- Recursive box walker handles: `ftyp`, `moov/mvhd`, `trak/tkhd`, `mdia/hdlr`, `stbl/stsd`; supports 64-bit extended-size boxes
+- Video viewer: native `<video>` player with metadata summary card (same pattern as audio viewer)
+- WebM files are viewable via native `<video>` but don't get ISO BMFF metadata extraction (different container format)
+- Video duration mapped to the `extent` field via `normalizeFields()`
+- Magic byte detection: ISO BMFF `ftyp` signature at bytes 4–7, with HEIC brand disambiguation to avoid misclassifying HEIC images as video
+- 12 video metadata keys added to `DEEP_META_CATALOG` for export mapping
+- Video blob URLs cleaned up on viewer close (pause + revoke)
+
 ## 2026-03-14
 
 ### Web Worker Pool & Two-Tier Processing Pipeline

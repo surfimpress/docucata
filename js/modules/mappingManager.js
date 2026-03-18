@@ -183,6 +183,20 @@ export const DEEP_META_CATALOG = [
     { key: 'format',           source: 'Audio' },
     { key: 'hasAlbumArt',      source: 'Audio' },
 
+    // Video (ISO BMFF)
+    { key: 'Format',           source: 'Video' },
+    { key: 'MajorBrand',       source: 'Video' },
+    { key: 'Duration',         source: 'Video' },
+    { key: 'DurationSeconds',  source: 'Video' },
+    { key: 'Width',            source: 'Video' },
+    { key: 'Height',           source: 'Video' },
+    { key: 'Rotation',         source: 'Video' },
+    { key: 'CreationDate',     source: 'Video' },
+    { key: 'VideoCodec',       source: 'Video' },
+    { key: 'AudioCodec',       source: 'Video' },
+    { key: 'Timescale',        source: 'Video' },
+    { key: 'TrackCount',       source: 'Video' },
+
     // RTF
     { key: 'charCountWithSpaces', source: 'RTF' },
     { key: 'totalEditingTime', source: 'RTF' },

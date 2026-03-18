@@ -12,6 +12,7 @@ Pure static web app for extracting and exporting file metadata. Runs entirely in
 - **Grid.js** for the data table (loaded via CDN UMD bundle)
 - **pdf.js** for PDF rendering and metadata extraction (CDN ES module)
 - **SheetJS (xlsx)** for spreadsheet viewing and deep metadata (CDN script)
+- **UTIF.js** for TIFF image decoding and canvas rendering (CDN script)
 - **No other external dependencies** — all other parsers are hand-written binary parsers
 
 ## Project Structure
@@ -54,6 +55,7 @@ docucata/
 │       ├── audioParser.js         # MP3 (ID3v1/v2), WAV, FLAC, OGG, AIFF (File | ArrayBuffer)
 │       ├── rtfParser.js           # RTF \info group parsing (File | ArrayBuffer)
 │       ├── textParser.js          # Plain text encoding/stats analysis (File | ArrayBuffer)
+│       ├── videoParser.js          # MP4/MOV/M4V metadata via ISO BMFF box parsing (File | ArrayBuffer)
 │       ├── docTextExtractor.js    # .doc text extraction (OLE2 piece table + Word for Mac 4.0)
 │       └── zipHandler.js          # ZIP extraction with OS artifact filtering
 ├── CHANGELOG.md
@@ -92,6 +94,7 @@ docucata/
 | Audio | mp3, wav, flac, ogg, oga, aif, aiff, m4a, aac, opus | audioParser |
 | RTF | rtf | rtfParser |
 | Text | txt, md, log, csv, ini, cfg, yaml, yml, toml | textParser |
+| Video (ISO BMFF) | mp4, mov, m4v | videoParser (ISO BMFF box parsing) |
 | Archives | zip | zipHandler (unpack only) |
 
 ## Viewer Support
@@ -103,6 +106,8 @@ docucata/
 | Spreadsheets (xlsx, xls, ods, csv) | SheetJS → HTML table with sheet tabs |
 | Audio (mp3, wav, flac, ogg, etc.) | Native `<audio>` player + metadata card |
 | Images | Native `<img>` via object URL |
+| TIFF | UTIF.js canvas decoding |
+| Video (mp4, mov, m4v, webm) | Native `<video>` player + metadata card |
 | Text/code | `<pre>` block |
 
 ## User Preferences

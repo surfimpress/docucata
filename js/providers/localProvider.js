@@ -22,12 +22,14 @@ import { parseRtfMetadata } from '../parsers/rtfParser.js';
 import { parseSpreadsheetMetadata } from '../parsers/spreadsheetParser.js';
 import { parseAudioMetadataFromBuffer } from '../parsers/audioParser.js';
 import { parseTextMetadata } from '../parsers/textParser.js';
+import { parseVideoMetadataFromBuffer } from '../parsers/videoParser.js';
 import { extractExcerptFromBuffer } from '../modules/excerptExtractor.js';
 
 const IMAGE_EXTS = ['jpg', 'jpeg', 'tiff', 'tif', 'heic', 'heif', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
 const OFFICE_EXTS = ['docx', 'xlsx', 'pptx', 'odt', 'ods', 'odp'];
 const OLE2_EXTS = ['doc', 'xls', 'ppt', 'dot', 'xlt', 'pps'];
 const AUDIO_EXTS = ['mp3', 'wav', 'wave', 'flac', 'ogg', 'oga', 'aif', 'aiff', 'm4a', 'aac', 'wma', 'opus'];
+const VIDEO_EXTS = ['mp4', 'mov', 'm4v'];
 const TEXT_EXTS = ['txt', 'md', 'log', 'csv', 'ini', 'cfg', 'yaml', 'yml', 'toml'];
 const SPREADSHEET_EXTS = ['xlsx', 'xls', 'ods', 'csv'];
 
@@ -56,6 +58,8 @@ export async function dispatchParsers(buffer, extension, category, fileSize) {
         deepMeta = await parseRtfMetadata(buffer);
     } else if (AUDIO_EXTS.includes(extension)) {
         deepMeta = await parseAudioMetadataFromBuffer(buffer, extension, fileSize);
+    } else if (VIDEO_EXTS.includes(extension)) {
+        deepMeta = parseVideoMetadataFromBuffer(buffer);
     }
 
     // Text file analysis — encoding, line endings, word/line counts
@@ -110,6 +114,7 @@ export function normalizeFields(deepMeta) {
     else if (deepMeta?.slideCount) extent = String(deepMeta.slideCount);
     else if (deepMeta?.slides) extent = String(deepMeta.slides);
     else if (deepMeta?.sheetCount) extent = String(deepMeta.sheetCount);
+    else if (deepMeta?.Duration) extent = deepMeta.Duration;
 
     return { createdDate, author, title, language, extent };
 }

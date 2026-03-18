@@ -124,6 +124,19 @@ function matchMagicBytes(b) {
         return { extension: 'tiff', mime: 'image/tiff', category: 'Image' };
     }
 
+    // ISO BMFF (MP4/MOV/M4V): bytes 4-7 = 'ftyp'
+    if (b.length >= 8 &&
+        b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+        // Distinguish video from HEIC by major brand at bytes 8-11
+        if (b.length >= 12) {
+            const brand = String.fromCharCode(b[8], b[9], b[10], b[11]);
+            if (['heic', 'heix', 'hevc', 'mif1'].includes(brand)) {
+                return { extension: 'heic', mime: 'image/heic', category: 'Image' };
+            }
+        }
+        return { extension: 'mp4', mime: 'video/mp4', category: 'Video' };
+    }
+
     // BMP: BM
     if (b[0] === 0x42 && b[1] === 0x4D) {
         return { extension: 'bmp', mime: 'image/bmp', category: 'Image' };

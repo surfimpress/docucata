@@ -12,9 +12,10 @@ const TEXT_EXTS = [
     'rb', 'java', 'c', 'cpp', 'h', 'rs', 'go', 'php', 'sql',
 ];
 
-const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico'];
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'tiff', 'tif'];
 const SPREADSHEET_EXTS = ['xlsx', 'xls', 'ods', 'csv'];
 const AUDIO_EXTS = ['mp3', 'wav', 'wave', 'flac', 'ogg', 'oga', 'aif', 'aiff', 'm4a', 'aac', 'opus'];
+const VIDEO_EXTS = ['mp4', 'mov', 'm4v', 'webm'];
 
 let modalEl = null;
 
@@ -60,6 +61,8 @@ export async function openViewer(item) {
             await renderRtf(bodyEl, item._file);
         } else if (AUDIO_EXTS.includes(ext)) {
             renderAudio(bodyEl, item._file, item.deepMeta);
+        } else if (VIDEO_EXTS.includes(ext)) {
+            renderVideo(bodyEl, item._file, item.deepMeta);
         } else if (IMAGE_EXTS.includes(ext)) {
             renderImage(bodyEl, item._file);
         } else if (TEXT_EXTS.includes(ext)) {
@@ -87,6 +90,8 @@ export function closeViewer() {
     imgs.forEach(img => URL.revokeObjectURL(img.src));
     const audios = bodyEl.querySelectorAll('audio[src^="blob:"]');
     audios.forEach(a => { a.pause(); URL.revokeObjectURL(a.src); });
+    const videos = bodyEl.querySelectorAll('video[src^="blob:"]');
+    videos.forEach(v => { v.pause(); URL.revokeObjectURL(v.src); });
     bodyEl.innerHTML = '';
     // Reset spinner to visible state for next open
     modal.querySelector('.viewer-loading').classList.remove('hidden');
@@ -200,6 +205,11 @@ async function renderDoc(container, file) {
  * Render an image file.
  */
 function renderImage(container, file) {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'tiff' || ext === 'tif') {
+        renderTiff(container, file);
+        return;
+    }
     const url = URL.createObjectURL(file);
     container.innerHTML = '';
     const img = document.createElement('img');
@@ -207,6 +217,37 @@ function renderImage(container, file) {
     img.src = url;
     img.alt = file.name;
     container.appendChild(img);
+}
+
+/**
+ * Render a TIFF file using UTIF.js canvas decoding.
+ */
+async function renderTiff(container, file) {
+    if (typeof UTIF === 'undefined') {
+        container.innerHTML = '<p class="viewer-error">UTIF.js library not loaded.</p>';
+        return;
+    }
+    const buffer = await file.arrayBuffer();
+    const ifds = UTIF.decode(buffer);
+    if (!ifds || ifds.length === 0) {
+        container.innerHTML = '<p class="viewer-unsupported">Could not decode TIFF image.</p>';
+        return;
+    }
+    UTIF.decodeImage(buffer, ifds[0]);
+    const rgba = UTIF.toRGBA8(ifds[0]);
+    const w = ifds[0].width;
+    const h = ifds[0].height;
+
+    container.innerHTML = '';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'viewer-image';
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(w, h);
+    imgData.data.set(new Uint8Array(rgba.buffer));
+    ctx.putImageData(imgData, 0, 0);
+    container.appendChild(canvas);
 }
 
 /**
@@ -341,6 +382,47 @@ function renderAudio(container, file, deepMeta) {
                 let val = deepMeta[f];
                 if (f === 'sampleRate') val = `${val} Hz`;
                 if (f === 'channels') val = val === 1 ? 'Mono' : val === 2 ? 'Stereo' : `${val}ch`;
+                const label = f.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+                return `<tr><td class="audio-meta-label">${label}</td><td>${escapeHtml(String(val))}</td></tr>`;
+            }).join('');
+
+        if (rows) {
+            card.innerHTML = `<table class="audio-meta-table">${rows}</table>`;
+            wrapper.appendChild(card);
+        }
+    }
+
+    container.appendChild(wrapper);
+}
+
+/**
+ * Render a video file with native player and metadata summary.
+ */
+function renderVideo(container, file, deepMeta) {
+    const url = URL.createObjectURL(file);
+    container.innerHTML = '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'viewer-video-wrapper';
+
+    const video = document.createElement('video');
+    video.className = 'viewer-video-player';
+    video.controls = true;
+    video.src = url;
+    wrapper.appendChild(video);
+
+    // Metadata summary card
+    if (deepMeta) {
+        const card = document.createElement('div');
+        card.className = 'viewer-video-meta';
+
+        const displayFields = ['Format', 'Duration', 'Width', 'Height', 'Rotation',
+            'VideoCodec', 'AudioCodec', 'CreationDate', 'MajorBrand', 'TrackCount'];
+
+        const rows = displayFields
+            .filter(f => deepMeta[f] !== undefined && deepMeta[f] !== null)
+            .map(f => {
+                const val = deepMeta[f];
                 const label = f.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
                 return `<tr><td class="audio-meta-label">${label}</td><td>${escapeHtml(String(val))}</td></tr>`;
             }).join('');
